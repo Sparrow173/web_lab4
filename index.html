@@ -14,8 +14,37 @@
       <h2 class="h2" id="locationTitle">Ваше текущее местоположение</h2>
       <p id="status" class="header__status">—</p>
     </header>
+
     <main class="container">
-      <section class="controls" id="controls"></section>
+      <section class="controls" id="controls">
+        <div class="wrap">
+          <div id="mainControls"></div>
+
+          <div class="extra-cities"></div>
+
+          <h3 class="h3">Дополнительные города</h3>
+
+          <form id="extraCityForm" autocomplete="off">
+            <label>
+              Город:
+              <input
+                class="input"
+                id="extraCityInput"
+                name="extraCity"
+                type="text"
+                placeholder="Например: Париж"
+                required
+              />
+            </label>
+            <button class="btn" id="extraCitySubmit" type="submit">
+              Добавить город
+            </button>
+          </form>
+
+          <ul id="extraCityList" class="extra-cities__list"></ul>
+        </div>
+      </section>
+
       <section id="forecast" class="forecast flex items-center"></section>
     </main>
 
