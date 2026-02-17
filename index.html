@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -11,12 +11,14 @@
   <body>
     <header class="header container">
       <h1 class="h1">Прогноз погоды</h1>
-      <h2 class="h2">Ваше текущее местоположение</h2>
+      <h2 class="h2" id="locationTitle">Ваше текущее местоположение</h2>
       <p id="status" class="header__status">—</p>
     </header>
     <main class="container">
+      <section class="controls" id="controls"></section>
       <section id="forecast" class="forecast flex items-center"></section>
     </main>
+
     <script src="/js/script.js"></script>
   </body>
 </html>

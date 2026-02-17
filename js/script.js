@@ -3,6 +3,9 @@ const API_KEY = "fee902e19f17edb9f907e50f854fb759";
 const statusEl = document.getElementById("status");
 const forecastEl = document.getElementById("forecast");
 
+const controlsEl = document.getElementById("controls");
+const locationTitleEl = document.getElementById("locationTitle");
+
 document.addEventListener("DOMContentLoaded", init);
 
 function init() {
@@ -21,36 +24,29 @@ function init() {
 // ГЕОЛОКАЦИЯ
 function requestGeolocation() {
   if (!navigator.geolocation) {
-    setStatus("Ошибка");
+    setStatus("Геолокация недоступна");
     showMessage("Геолокация не поддерживается браузером.", true);
+
+    // Фоллбек на ввод города
+    showCityForm();
     return;
   }
 
   navigator.geolocation.getCurrentPosition(
-    // SUCCESS: пользователь разрешил доступ или координаты доступны
     async (pos) => {
-      // Достаём координаты
       const { latitude, longitude } = pos.coords;
+
+      // Для геолокации спрятаь форму города (если вдруг была показана)
+      clearControls();
+      if (locationTitleEl)
+        locationTitleEl.textContent = "Ваше текущее местоположение";
 
       setStatus("Получаем прогноз погоды…");
 
       try {
-        // Запросить прогноз по координатам
-        const data = await fetchForecast(latitude, longitude);
-
-        // Превращаем прогноз из 3-часовых точек в "сегодня + 2 дня"
+        const data = await fetchForecastByCoords(latitude, longitude);
         const forecast = normalizeTo3Days(data);
 
-        console.log(
-          "OpenWeather city:",
-          data.city?.name,
-          data.city?.country,
-          "tz:",
-          data.city?.timezone,
-        );
-        console.log("Координаты:", latitude, longitude);
-
-        // 3) Рендерим в интерфейсе
         setStatus("Погода успешно получена");
         renderForecast(forecast);
       } catch (err) {
@@ -62,19 +58,91 @@ function requestGeolocation() {
       }
     },
 
+    // ERROR: пользователь отклонил доступ (или таймаут/ошибка)
     () => {
       setStatus("Доступ отклонён");
-      showMessage("Доступ к геопозиции отклонён. Проверьте настройки ПК", true);
+      showMessage("Доступ к геопозиции отклонён. Введите город вручную.", true);
+
+      // показать форму ввода города
+      showCityForm();
     },
     { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 },
   );
 }
 
-// ==========================
+// ФОРМА ГОРОДА
+function showCityForm() {
+  if (!controlsEl) return;
+
+  if (locationTitleEl) locationTitleEl.textContent = "Выбранный город";
+
+  controlsEl.innerHTML = `
+    <form id="cityForm" autocomplete="off">
+      <label>
+        Город:
+        <input
+          class="input"
+          id="cityInput"
+          name="city"
+          type="text"
+          placeholder="Например: Берлин"
+          required
+        />
+      </label>
+      <button class="btn" id="citySubmit" type="submit">Показать прогноз</button>
+    </form>
+  `;
+
+  const form = document.getElementById("cityForm");
+  form.addEventListener("submit", onCitySubmit);
+}
+
+function clearControls() {
+  if (!controlsEl) return;
+  controlsEl.innerHTML = "";
+}
+
+async function onCitySubmit(e) {
+  e.preventDefault();
+
+  const input = document.getElementById("cityInput");
+  const button = document.getElementById("citySubmit");
+
+  const city = (input?.value || "").trim();
+
+  if (!city) {
+    setStatus("Ошибка");
+    showMessage("Введите название города.", true);
+    return;
+  }
+
+  // Блок формы на время запроса
+  if (input) input.disabled = true;
+  if (button) button.disabled = true;
+
+  setStatus("Получаем прогноз погоды…");
+  showMessage("Загрузка…");
+
+  try {
+    const data = await fetchForecastByCity(city);
+    const forecast = normalizeTo3Days(data);
+
+    setStatus("Погода успешно получена");
+    renderForecast(forecast);
+  } catch (err) {
+    // Если это "город не найден" — показать человеко-понятно
+    const msg = err?.message || "Не удалось загрузить прогноз.";
+    setStatus("Ошибка");
+    showMessage(msg, true);
+  } finally {
+    if (input) input.disabled = false;
+    if (button) button.disabled = false;
+  }
+}
+
 // ЗАПРОС В OPENWEATHER
-// ==========================
-async function fetchForecast(lat, lon) {
-  // Собирать URL корректно
+async function fetchForecastByCoords(lat, lon) {
+  // Собрать URL корректно
   const url = new URL("https://api.openweathermap.org/data/2.5/forecast");
   url.searchParams.set("lat", String(lat));
   url.searchParams.set("lon", String(lon));
@@ -87,6 +155,25 @@ async function fetchForecast(lat, lon) {
   const res = await fetch(url.toString());
 
   if (!res.ok) {
+    throw new Error("Запрос прогноза не удался: " + res.status);
+  }
+
+  return await res.json();
+}
+
+async function fetchForecastByCity(city) {
+  const url = new URL("https://api.openweathermap.org/data/2.5/forecast");
+  url.searchParams.set("q", city);
+  url.searchParams.set("appid", API_KEY);
+  url.searchParams.set("units", "metric");
+  url.searchParams.set("lang", "ru");
+
+  const res = await fetch(url.toString());
+
+  if (!res.ok) {
+    if (res.status === 404) {
+      throw new Error("Город не найден. Проверьте написание.");
+    }
     throw new Error("Запрос прогноза не удался: " + res.status);
   }
 
@@ -186,7 +273,7 @@ function summarizeDay(dateKey, entries) {
 }
 
 // РАБОТА С ВРЕМЕНЕМ ГОРОДА
-// Перевести время точки прогноза в локальную дату города:
+// Переводим время точки прогноза в локальную дату города:
 function cityLocal(dtSec, tzSec) {
   const date = new Date((dtSec + tzSec) * 1000);
 
@@ -200,18 +287,18 @@ function cityLocal(dtSec, tzSec) {
 
 // ОТОБРАЖЕНИЕ
 function renderForecast(forecast) {
-  // Если по какой-то причине дней нет — показать ошибку
+  // Если по какой-то причине дней нет — покажем ошибку
   if (!forecast.days.length) {
     showMessage("Нет данных прогноза.", true);
     return;
   }
 
-  // Рендер карточки дней в forecastEl
+  // Рендерим карточки дней в forecastEl
   forecastEl.innerHTML = forecast.days
     .map((dayForecast) => {
       const dateLabel = formatDateKey(dayForecast.dateKey);
 
-      // округлить температуру
+      // округляем температуру
       const tempMin =
         dayForecast.tempMin == null ? "—" : Math.round(dayForecast.tempMin);
       const tempMax =
@@ -271,7 +358,7 @@ function formatDateKey(dateKey) {
 
   const weekDayNames = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
 
-  // День недели  по UTC
+  // День недели считаем по UTC
   const weekDayIndex = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
   const weekDay = weekDayNames[weekDayIndex];
 
