@@ -1,9 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
+    <title>Погода ОнЛайн</title>
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="./img/sun-favicon.png"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/css/reset.css" />
     <link rel="stylesheet" href="/css/global.css" />
     <link rel="stylesheet" href="/css/style.css" />
@@ -16,10 +28,16 @@
     </header>
 
     <main class="container">
+      <div class="flex-jus-center mt-16">
+        <button class="btn" id="refreshBtn" type="button">Обновить</button>
+      </div>
+
       <section class="controls" id="controls">
+        <!-- Сюда JS вставит форму основного города, если геолокация отклонена -->
         <div class="wrap">
           <div id="mainControls"></div>
 
+          <!-- Блок дополнительных городов -->
           <div class="extra-cities"></div>
 
           <h3 class="h3">Дополнительные города</h3>
@@ -47,7 +65,9 @@
 
       <section id="forecast" class="forecast flex items-center"></section>
     </main>
-
+    <footer class="footer">
+      <p>Погода ОнЛайн</p>
+    </footer>
     <script src="/js/script.js"></script>
   </body>
 </html>

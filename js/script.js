@@ -1,29 +1,39 @@
 const API_KEY = "fee902e19f17edb9f907e50f854fb759";
 
+// Добавить ключ для localStorage
+const STORAGE_KEY = "weatherAppState_v1";
+
 const statusEl = document.getElementById("status");
 const forecastEl = document.getElementById("forecast");
 
 const controlsEl = document.getElementById("controls");
 const locationTitleEl = document.getElementById("locationTitle");
 
+// Добавить состояние основного прогноза
 let mainForecast = null;
 let mainForecastTitle = "Ваше текущее местоположение";
 
-let mainSource = null;
+// Добавить состояние источника основного прогноза (нужно для обновления)
+let mainSource = null; // { type: "coords", lat, lon } | { type: "city", city }
 
-let mainStatus = "idle";
+// Добавить состояние статуса основного блока (нужно для "Загрузка..." при обновлении)
+let mainStatus = "idle"; // "idle" | "loading" | "ready" | "error"
 let mainErrorText = "";
 
+// Добавить состояние дополнительных городов
 const extraCityOrder = []; // хранит порядок добавления (ключи)
 const extraCityMap = new Map(); // key -> { name, status, forecast, error }
 
+// Добавить ссылки на элементы дополнительных городов
 const mainControlsEl = document.getElementById("mainControls");
 const extraCityFormEl = document.getElementById("extraCityForm");
 const extraCityInputEl = document.getElementById("extraCityInput");
 const extraCityListEl = document.getElementById("extraCityList");
 
+// Добавить ссылку на кнопку обновления
 const refreshBtnEl = document.getElementById("refreshBtn");
 
+// Добавить флаг "идёт обновление"
 let isRefreshing = false;
 
 document.addEventListener("DOMContentLoaded", init);
@@ -35,9 +45,52 @@ function init() {
     return;
   }
 
+  // Добавить загрузку состояния из localStorage
+  const loaded = loadAppState();
+  if (loaded) applyLoadedState(loaded);
+
+  // Добавить инициализацию UI дополнительных городов
   initExtraCitiesControls();
 
+  // Добавить инициализацию кнопки "Обновить"
   initRefreshControl();
+
+  // Если есть сохранённый основной источник — сразу восстановить прогнозы
+  if (mainSource) {
+    clearControls();
+    setMainTitleFromSource();
+
+    setStatus("Восстанавливаем прогноз…");
+    showMessage("Загрузка…");
+
+    // Перевести основной блок в загрузку и отрисовать заглушки
+    mainStatus = "loading";
+    updateForecastView();
+
+    Promise.allSettled([
+      refreshMainForecast(),
+      refreshExtraCitiesForecasts(),
+    ]).then(() => {
+      updateForecastView();
+
+      // Вывести аккуратный статус после восстановления
+      if (mainStatus === "error") {
+        setStatus("Ошибка");
+      } else {
+        setStatus("Погода успешно получена");
+      }
+
+      // Добавить сохранение состояния после восстановления
+      saveAppState();
+    });
+
+    return;
+  }
+
+  // Если основного источника нет, но есть доп. города — загрузить их (и параллельно запросить гео)
+  if (extraCityOrder.length) {
+    refreshExtraCitiesForecasts().then(() => updateForecastView());
+  }
 
   setStatus("Запрашиваем геолокацию…");
   showMessage("Загрузка…");
@@ -45,12 +98,14 @@ function init() {
   requestGeolocation();
 }
 
+// Добавить обработчик кнопки "Обновить"
 function initRefreshControl() {
   if (!refreshBtnEl) return;
   refreshBtnEl.addEventListener("click", onRefreshClick);
 }
 
 function onRefreshClick() {
+  // Запустить обновление прогнозов без перезагрузки страницы
   refreshAllForecasts();
 }
 
@@ -62,15 +117,20 @@ async function refreshAllForecasts() {
 
   setStatus("Обновляем прогноз…");
 
+  // Показать "Загрузка..." внутри основного блока и городов
   await Promise.allSettled([
     refreshMainForecast(),
     refreshExtraCitiesForecasts(),
   ]);
 
+  // Отрисовать итоговое состояние после всех запросов
   updateForecastView();
 
   // Статус по завершению
   setStatus("Обновление завершено");
+
+  // Добавить сохранение состояния после обновления
+  saveAppState();
 
   isRefreshing = false;
   if (refreshBtnEl) refreshBtnEl.disabled = false;
@@ -91,6 +151,7 @@ function requestGeolocation() {
     async (pos) => {
       const { latitude, longitude } = pos.coords;
 
+      // Для геолокации спрятаь форму города (если вдруг была показана)
       clearControls();
       if (locationTitleEl)
         locationTitleEl.textContent = "Ваше текущее местоположение";
@@ -101,19 +162,26 @@ function requestGeolocation() {
         const data = await fetchForecastByCoords(latitude, longitude);
         const forecast = normalizeTo3Days(data);
 
+        // Добавить сохранение источника основного прогноза (coords)
         mainSource = { type: "coords", lat: latitude, lon: longitude };
 
+        // Добавить сохранение основного прогноза
         mainForecast = forecast;
-        mainForecastTitle =
-          locationTitleEl?.textContent || "Текущее местоположение";
+        mainForecastTitle = "Ваше текущее местоположение";
 
+        // Добавить статус готовности основного блока
         mainStatus = "ready";
         mainErrorText = "";
 
         setStatus("Погода успешно получена");
 
+        // Добавить сохранение состояния после получения основного прогноза
+        saveAppState();
+
+        // Отобразить общий прогноз: основной + дополнительные города
         updateForecastView();
       } catch (err) {
+        // Добавить статус ошибки основного блока
         mainStatus = "error";
         mainErrorText =
           "Не удалось загрузить прогноз. Проверьте сеть и API_KEY.";
@@ -141,6 +209,7 @@ function showCityForm() {
 
   if (locationTitleEl) locationTitleEl.textContent = "Выбранный город";
 
+  // Добавить рендер формы основного города в отдельный контейнер
   const host = mainControlsEl || controlsEl;
 
   host.innerHTML = `
@@ -165,11 +234,13 @@ function showCityForm() {
 }
 
 function clearControls() {
+  // Изменить очистку: чистить только блок основного города (доп. города не трогать)
   if (mainControlsEl) {
     mainControlsEl.innerHTML = "";
     return;
   }
 
+  // Фоллбек: если отдельного блока нет — очищаем весь controls
   if (!controlsEl) return;
   controlsEl.innerHTML = "";
 }
@@ -188,6 +259,15 @@ async function onCitySubmit(e) {
     return;
   }
 
+  // Добавить отображение выбранного города в заголовке локации
+  if (locationTitleEl) locationTitleEl.textContent = `Город: ${city}`;
+
+  // Добавить сохранение источника основного прогноза (city) до запроса
+  mainSource = { type: "city", city };
+  mainForecastTitle = `Город: ${city}`;
+  saveAppState();
+
+  // Блок формы на время запроса
   if (input) input.disabled = true;
   if (button) button.disabled = true;
 
@@ -198,20 +278,28 @@ async function onCitySubmit(e) {
     const data = await fetchForecastByCity(city);
     const forecast = normalizeTo3Days(data);
 
-    mainSource = { type: "city", city };
-
+    // Добавить сохранение основного прогноза
     mainForecast = forecast;
-    mainForecastTitle = locationTitleEl?.textContent || "Выбранный город";
 
+    // Добавить статус готовности основного блока
     mainStatus = "ready";
     mainErrorText = "";
 
     setStatus("Погода успешно получена");
 
+    // Добавить сохранение состояния после успешного получения прогноза
+    saveAppState();
+
+    // Отобразить общий прогноз: основной + дополнительные города
     updateForecastView();
+
+    // Убрать форму после успешного выбора города
+    clearControls();
   } catch (err) {
+    // Если это "город не найден" — показать человеко-понятно
     const msg = err?.message || "Не удалось загрузить прогноз.";
 
+    // Добавить статус ошибки основного блока
     mainStatus = "error";
     mainErrorText = msg;
 
@@ -223,11 +311,14 @@ async function onCitySubmit(e) {
   }
 }
 
+// Добавить обновление основного прогноза по сохранённому источнику
 async function refreshMainForecast() {
+  // Если основного источника нет — ничего не обновляем
   if (!mainSource) return;
 
   mainStatus = "loading";
   mainErrorText = "";
+  setMainTitleFromSource();
   updateForecastView();
 
   try {
@@ -253,13 +344,16 @@ async function refreshMainForecast() {
 // ДОПОЛНИТЕЛЬНЫЕ ГОРОДА
 function initExtraCitiesControls() {
   if (extraCityFormEl) {
+    // Добавить обработчик сабмита формы дополнительных городов
     extraCityFormEl.addEventListener("submit", onExtraCitySubmit);
   }
 
   if (extraCityListEl) {
+    // Добавить обработчик кликов по списку (удаление)
     extraCityListEl.addEventListener("click", onExtraCityListClick);
   }
 
+  // Отобразить текущий список (с учётом восстановления из localStorage)
   renderExtraCityList();
 }
 
@@ -277,12 +371,14 @@ async function onExtraCitySubmit(e) {
 
   const key = normalizeCityKey(rawName);
 
+  // Добавить защиту от дублей
   if (extraCityMap.has(key)) {
     setStatus("Ошибка");
     showMessage("Этот город уже добавлен.", true);
     return;
   }
 
+  // Добавить город в состояние как "loading"
   extraCityOrder.push(key);
   extraCityMap.set(key, {
     name: rawName,
@@ -291,13 +387,20 @@ async function onExtraCitySubmit(e) {
     error: "",
   });
 
+  // Очистить поле ввода
   extraCityInputEl.value = "";
 
+  // Отобразить список городов
   renderExtraCityList();
 
+  // Добавить сохранение состояния после добавления города в список
+  saveAppState();
+
+  // Отобразить заглушку "Загрузка..." в прогнозе для нового города
   updateForecastView();
 
   try {
+    // Получить прогноз для дополнительного города
     const data = await fetchForecastByCity(rawName);
     const forecast = normalizeTo3Days(data);
 
@@ -319,7 +422,11 @@ async function onExtraCitySubmit(e) {
 
     setStatus("Ошибка");
   } finally {
+    // Отобразить общий прогноз: основной + дополнительные города
     updateForecastView();
+
+    // Добавить сохранение состояния после попытки загрузки (чтобы ошибка тоже восстановилась)
+    saveAppState();
   }
 }
 
@@ -334,13 +441,18 @@ function onExtraCityListClick(e) {
   if (!key) return;
 
   if (action === "remove") {
+    // Удалить город из состояния
     extraCityMap.delete(key);
 
     const idx = extraCityOrder.indexOf(key);
     if (idx >= 0) extraCityOrder.splice(idx, 1);
 
+    // Отобразить обновлённый список и прогноз
     renderExtraCityList();
     updateForecastView();
+
+    // Добавить сохранение состояния после удаления города
+    saveAppState();
   }
 }
 
@@ -352,6 +464,7 @@ function renderExtraCityList() {
     return;
   }
 
+  // Отобразить список добавленных городов
   extraCityListEl.innerHTML = extraCityOrder
     .map((key) => {
       const entry = extraCityMap.get(key);
@@ -375,12 +488,15 @@ function renderExtraCityList() {
 }
 
 function normalizeCityKey(name) {
+  // Получить ключ города для сравнения (антидубли)
   return String(name).trim().toLowerCase();
 }
 
+// Добавить обновление всех дополнительных городов одним действием
 async function refreshExtraCitiesForecasts() {
   if (!extraCityOrder.length) return;
 
+  // Перевести все города в "loading"
   for (const key of extraCityOrder) {
     const entry = extraCityMap.get(key);
     if (entry) {
@@ -391,6 +507,7 @@ async function refreshExtraCitiesForecasts() {
 
   updateForecastView();
 
+  // Получить прогнозы параллельно
   const tasks = extraCityOrder.map(async (key) => {
     const entry = extraCityMap.get(key);
     if (!entry) return;
@@ -412,8 +529,118 @@ async function refreshExtraCitiesForecasts() {
   await Promise.allSettled(tasks);
 }
 
+// LOCALSTORAGE
+function buildState() {
+  // Добавить формирование объекта состояния приложения
+  return {
+    mainSource,
+    extraCities: extraCityOrder.map(
+      (key) => extraCityMap.get(key)?.name || key,
+    ),
+  };
+}
+
+function saveAppState() {
+  // Добавить сохранение состояния в localStorage
+  try {
+    const state = buildState();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+  }
+}
+
+function loadAppState() {
+  // Получить состояние из localStorage
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== "object") return null;
+
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function applyLoadedState(state) {
+  // Применить загруженное состояние к приложению
+  const src = state.mainSource;
+
+  if (src && typeof src === "object") {
+    if (
+      src.type === "coords" &&
+      typeof src.lat === "number" &&
+      typeof src.lon === "number"
+    ) {
+      mainSource = { type: "coords", lat: src.lat, lon: src.lon };
+      mainForecastTitle = "Ваше текущее местоположение";
+      mainStatus = "loading";
+      mainErrorText = "";
+    }
+
+    if (
+      src.type === "city" &&
+      typeof src.city === "string" &&
+      src.city.trim()
+    ) {
+      mainSource = { type: "city", city: src.city.trim() };
+      mainForecastTitle = `Город: ${mainSource.city}`;
+      mainStatus = "loading";
+      mainErrorText = "";
+
+      // Восстановить текст заголовка (чтобы было видно выбранный город)
+      if (locationTitleEl) locationTitleEl.textContent = mainForecastTitle;
+    }
+  }
+
+  const cities = state.extraCities;
+  if (Array.isArray(cities)) {
+    for (const name of cities) {
+      if (typeof name !== "string") continue;
+
+      const clean = name.trim();
+      if (!clean) continue;
+
+      const key = normalizeCityKey(clean);
+      if (extraCityMap.has(key)) continue;
+
+      extraCityOrder.push(key);
+      extraCityMap.set(key, {
+        name: clean,
+        status: "loading",
+        forecast: null,
+        error: "",
+      });
+    }
+  }
+
+  setMainTitleFromSource();
+}
+
+function setMainTitleFromSource() {
+  // Установить заголовок локации по текущему источнику
+  if (!locationTitleEl) return;
+
+  if (!mainSource) {
+    locationTitleEl.textContent = "Ваше текущее местоположение";
+    return;
+  }
+
+  if (mainSource.type === "coords") {
+    locationTitleEl.textContent = "Ваше текущее местоположение";
+    mainForecastTitle = "Ваше текущее местоположение";
+    return;
+  }
+
+  locationTitleEl.textContent = `Город: ${mainSource.city}`;
+  mainForecastTitle = `Город: ${mainSource.city}`;
+}
+
 // ЗАПРОС В OPENWEATHER
 async function fetchForecastByCoords(lat, lon) {
+  // Собрать URL корректно
   const url = new URL("https://api.openweathermap.org/data/2.5/forecast");
   url.searchParams.set("lat", String(lat));
   url.searchParams.set("lon", String(lon));
@@ -451,17 +678,24 @@ async function fetchForecastByCity(city) {
   return await res.json();
 }
 
-
+//  НОРМАЛИЗАЦИЯ:
+//  Берём прогноз 5 days/3 hours и превращаем в 3 дня:
+//  сегодня + 2 следующих.
 function normalizeTo3Days(apiData) {
+  // timezone города в секундах
   const tz = apiData.city?.timezone ?? 0;
 
+  // список 3-часовых прогнозов
   const list = apiData.list || [];
 
+  // Группируем прогноз по локальной дате города
   const byDay = new Map();
 
   for (const item of list) {
+    // item.dt — время точки в секундах UTC
     const dt = item.dt;
 
+    // cityLocal возвращает локальную дату города + час
     const { dateKey, hour } = cityLocal(dt, tz);
 
     // Создать массив для дня, если его ещё нет
@@ -537,7 +771,7 @@ function summarizeDay(dateKey, entries) {
 }
 
 // РАБОТА С ВРЕМЕНЕМ ГОРОДА
-// Переводим время точки прогноза в локальную дату города:
+// Перевести время точки прогноза в локальную дату города:
 function cityLocal(dtSec, tzSec) {
   const date = new Date((dtSec + tzSec) * 1000);
 
@@ -566,7 +800,7 @@ function updateForecastView() {
       groups.push(renderForecastGroup(mainForecastTitle, mainForecast));
     }
   } else {
-    // Если источника ещё нет, но есть прогноз (на всякий случай)
+    // Если источника ещё нет, но есть прогноз
     if (mainForecast?.days?.length) {
       groups.push(renderForecastGroup(mainForecastTitle, mainForecast));
     }
@@ -598,6 +832,7 @@ function updateForecastView() {
 }
 
 function renderForecastGroup(title, forecast) {
+  // Если дней нет — показать ошибку
   if (!forecast?.days?.length) {
     return renderGroupMessage(title, "Нет данных прогноза.", true);
   }
@@ -606,7 +841,7 @@ function renderForecastGroup(title, forecast) {
     .map((dayForecast) => {
       const dateLabel = formatDateKey(dayForecast.dateKey);
 
-      // округляем температуру
+      // округлить температуру
       const tempMin =
         dayForecast.tempMin == null ? "—" : Math.round(dayForecast.tempMin);
       const tempMax =
@@ -687,7 +922,7 @@ function formatDateKey(dateKey) {
 
   const weekDayNames = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
 
-  // День недели считаем по UTC
+  // День недели по UTC
   const weekDayIndex = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
   const weekDay = weekDayNames[weekDayIndex];
 
