@@ -1,6 +1,5 @@
 const API_KEY = "fee902e19f17edb9f907e50f854fb759";
 
-// Добавить ключ для localStorage
 const STORAGE_KEY = "weatherAppState_v1";
 
 const statusEl = document.getElementById("status");
@@ -9,31 +8,24 @@ const forecastEl = document.getElementById("forecast");
 const controlsEl = document.getElementById("controls");
 const locationTitleEl = document.getElementById("locationTitle");
 
-// Добавить состояние основного прогноза
 let mainForecast = null;
 let mainForecastTitle = "Ваше текущее местоположение";
 
-// Добавить состояние источника основного прогноза (нужно для обновления)
-let mainSource = null; // { type: "coords", lat, lon } | { type: "city", city }
+let mainSource = null;
 
-// Добавить состояние статуса основного блока (нужно для "Загрузка..." при обновлении)
-let mainStatus = "idle"; // "idle" | "loading" | "ready" | "error"
+let mainStatus = "idle";
 let mainErrorText = "";
 
-// Добавить состояние дополнительных городов
 const extraCityOrder = []; // хранит порядок добавления (ключи)
 const extraCityMap = new Map(); // key -> { name, status, forecast, error }
 
-// Добавить ссылки на элементы дополнительных городов
 const mainControlsEl = document.getElementById("mainControls");
 const extraCityFormEl = document.getElementById("extraCityForm");
 const extraCityInputEl = document.getElementById("extraCityInput");
 const extraCityListEl = document.getElementById("extraCityList");
 
-// Добавить ссылку на кнопку обновления
 const refreshBtnEl = document.getElementById("refreshBtn");
 
-// Добавить флаг "идёт обновление"
 let isRefreshing = false;
 
 document.addEventListener("DOMContentLoaded", init);
@@ -45,17 +37,13 @@ function init() {
     return;
   }
 
-  // Добавить загрузку состояния из localStorage
   const loaded = loadAppState();
   if (loaded) applyLoadedState(loaded);
 
-  // Добавить инициализацию UI дополнительных городов
   initExtraCitiesControls();
 
-  // Добавить инициализацию кнопки "Обновить"
   initRefreshControl();
 
-  // Если есть сохранённый основной источник — сразу восстановить прогнозы
   if (mainSource) {
     clearControls();
     setMainTitleFromSource();
@@ -162,20 +150,16 @@ function requestGeolocation() {
         const data = await fetchForecastByCoords(latitude, longitude);
         const forecast = normalizeTo3Days(data);
 
-        // Добавить сохранение источника основного прогноза (coords)
         mainSource = { type: "coords", lat: latitude, lon: longitude };
 
-        // Добавить сохранение основного прогноза
         mainForecast = forecast;
         mainForecastTitle = "Ваше текущее местоположение";
 
-        // Добавить статус готовности основного блока
         mainStatus = "ready";
         mainErrorText = "";
 
         setStatus("Погода успешно получена");
 
-        // Добавить сохранение состояния после получения основного прогноза
         saveAppState();
 
         // Отобразить общий прогноз: основной + дополнительные города
@@ -209,7 +193,6 @@ function showCityForm() {
 
   if (locationTitleEl) locationTitleEl.textContent = "Выбранный город";
 
-  // Добавить рендер формы основного города в отдельный контейнер
   const host = mainControlsEl || controlsEl;
 
   host.innerHTML = `
@@ -259,7 +242,6 @@ async function onCitySubmit(e) {
     return;
   }
 
-  // Добавить отображение выбранного города в заголовке локации
   if (locationTitleEl) locationTitleEl.textContent = `Город: ${city}`;
 
   // Добавить сохранение источника основного прогноза (city) до запроса
@@ -278,16 +260,13 @@ async function onCitySubmit(e) {
     const data = await fetchForecastByCity(city);
     const forecast = normalizeTo3Days(data);
 
-    // Добавить сохранение основного прогноза
     mainForecast = forecast;
 
-    // Добавить статус готовности основного блока
     mainStatus = "ready";
     mainErrorText = "";
 
     setStatus("Погода успешно получена");
 
-    // Добавить сохранение состояния после успешного получения прогноза
     saveAppState();
 
     // Отобразить общий прогноз: основной + дополнительные города
@@ -299,7 +278,6 @@ async function onCitySubmit(e) {
     // Если это "город не найден" — показать человеко-понятно
     const msg = err?.message || "Не удалось загрузить прогноз.";
 
-    // Добавить статус ошибки основного блока
     mainStatus = "error";
     mainErrorText = msg;
 
@@ -311,7 +289,6 @@ async function onCitySubmit(e) {
   }
 }
 
-// Добавить обновление основного прогноза по сохранённому источнику
 async function refreshMainForecast() {
   // Если основного источника нет — ничего не обновляем
   if (!mainSource) return;
@@ -344,16 +321,13 @@ async function refreshMainForecast() {
 // ДОПОЛНИТЕЛЬНЫЕ ГОРОДА
 function initExtraCitiesControls() {
   if (extraCityFormEl) {
-    // Добавить обработчик сабмита формы дополнительных городов
     extraCityFormEl.addEventListener("submit", onExtraCitySubmit);
   }
 
   if (extraCityListEl) {
-    // Добавить обработчик кликов по списку (удаление)
     extraCityListEl.addEventListener("click", onExtraCityListClick);
   }
 
-  // Отобразить текущий список (с учётом восстановления из localStorage)
   renderExtraCityList();
 }
 
@@ -371,14 +345,12 @@ async function onExtraCitySubmit(e) {
 
   const key = normalizeCityKey(rawName);
 
-  // Добавить защиту от дублей
   if (extraCityMap.has(key)) {
     setStatus("Ошибка");
     showMessage("Этот город уже добавлен.", true);
     return;
   }
 
-  // Добавить город в состояние как "loading"
   extraCityOrder.push(key);
   extraCityMap.set(key, {
     name: rawName,
@@ -393,7 +365,6 @@ async function onExtraCitySubmit(e) {
   // Отобразить список городов
   renderExtraCityList();
 
-  // Добавить сохранение состояния после добавления города в список
   saveAppState();
 
   // Отобразить заглушку "Загрузка..." в прогнозе для нового города
@@ -425,7 +396,6 @@ async function onExtraCitySubmit(e) {
     // Отобразить общий прогноз: основной + дополнительные города
     updateForecastView();
 
-    // Добавить сохранение состояния после попытки загрузки (чтобы ошибка тоже восстановилась)
     saveAppState();
   }
 }
@@ -451,7 +421,6 @@ function onExtraCityListClick(e) {
     renderExtraCityList();
     updateForecastView();
 
-    // Добавить сохранение состояния после удаления города
     saveAppState();
   }
 }
